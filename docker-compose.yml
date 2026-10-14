@@ -1,0 +1,16 @@
+# Local PostgreSQL for development: docker compose up -d
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: shala
+      POSTGRES_PASSWORD: shala_dev_password
+      POSTGRES_DB: shala_sangathi
+    ports:
+      - '5433:5432'
+    volumes:
+      - shala_pgdata:/var/lib/postgresql/data
+
+volumes:
+  shala_pgdata:

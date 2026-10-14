@@ -1,0 +1,29 @@
+{
+	"compilerOptions": {
+		/* Language and Environment */
+		"target": "es2023",
+		"lib": ["es2023"],
+
+		/* Modules - package.json has no "type" field, so nodenext emits CommonJS */
+		"module": "nodenext",
+		"moduleResolution": "nodenext",
+		"resolveJsonModule": true,
+		"esModuleInterop": true,
+		"forceConsistentCasingInFileNames": true,
+
+		/* Emit */
+		"outDir": "dist",
+		"rootDir": ".",
+		"sourceMap": true,
+
+		/* Type Checking */
+		"strict": true,
+		"noFallthroughCasesInSwitch": true,
+
+		/* Completeness */
+		"skipLibCheck": true,
+		"types": ["node"]
+	},
+	"include": ["index.ts", "config.ts", "app/**/*.ts", "prisma/**/*.ts"],
+	"exclude": ["node_modules", "dist"]
+}

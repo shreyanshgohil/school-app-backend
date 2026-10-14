@@ -1,0 +1,382 @@
+// Shala Sangathi - database schema
+// Docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../app/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Users & auth
+// ---------------------------------------------------------------------------
+
+model User {
+  id              String    @id @default(uuid())
+  username        String    @unique
+  password        String
+  fullName        String
+  // Staff (super admins) log in with email or mobile; students use username
+  email           String?   @unique
+  // Optional on purpose: siblings can share one family mobile number
+  mobile          String?
+  role            UserRole  @default(STUDENT)
+  standardId      Int?
+  standard        Standard? @relation(fields: [standardId], references: [id])
+  schoolName      String?
+  // Regular students of our own school get every test free
+  isSchoolStudent Boolean   @default(false)
+  avatar          String?
+  isActive        Boolean   @default(true)
+  lastLoginAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  tokens            Token[]
+  attempts          TestAttempt[]
+  chapterProgress   ChapterProgress[]
+  subscriptions     Subscription[]
+  payments          Payment[]
+  createdQuestions  Question[]        @relation("QuestionCreatedBy")
+  reviewedQuestions Question[]        @relation("QuestionReviewedBy")
+  createdTests      Test[]
+
+  @@index([mobile])
+  @@index([standardId])
+}
+
+// One row per logged-in device session. The access token carries the token id,
+// so deleting the row (logout) invalidates both tokens immediately.
+model Token {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshToken String   @unique
+  deviceId     String?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model Subscription {
+  id          String             @id @default(uuid())
+  userId      String
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan        String             @default("MONTHLY")
+  amountPaise Int
+  status      SubscriptionStatus @default(ACTIVE)
+  startsAt    DateTime
+  endsAt      DateTime
+  provider    String?
+  providerRef String?
+  createdAt   DateTime           @default(now())
+
+  @@index([userId, endsAt])
+}
+
+// One online checkout (Razorpay Payment Link). Paying it extends the user's Subscription.
+model Payment {
+  id                String        @id @default(uuid())
+  userId            String
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider          String        @default("RAZORPAY")
+  // Razorpay payment link id (plink_...)
+  providerRef       String        @unique
+  // Razorpay payment id (pay_...) once paid
+  providerPaymentId String?
+  amountPaise       Int
+  months            Int
+  status            PaymentStatus @default(CREATED)
+  paidAt            DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([userId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Curriculum
+// ---------------------------------------------------------------------------
+
+model Standard {
+  // 1 to 10
+  id    Int    @id
+  name  String
+  order Int
+
+  users     User[]
+  subjects  Subject[]
+  questions Question[]
+  tests     Test[]
+  materials StudyMaterial[]
+  homework  Homework[]
+}
+
+model Subject {
+  id          String   @id @default(uuid())
+  standardId  Int
+  standard    Standard @relation(fields: [standardId], references: [id])
+  name        String
+  nameEn      String
+  description String?
+  // Icon key understood by the app (e.g. "book", "calculator", "flask")
+  icon        String
+  color       String
+  order       Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  chapters  Chapter[]
+  questions Question[]
+  tests     Test[]
+  materials StudyMaterial[]
+  homework  Homework[]
+
+  @@unique([standardId, nameEn])
+}
+
+model Chapter {
+  id          String   @id @default(uuid())
+  subjectId   String
+  subject     Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  number      Int
+  title       String
+  summary     String?
+  content     String   @db.Text
+  imageUrl    String?
+  // [{ word: string, meaning: string }]
+  vocabulary  Json?
+  isPublished Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  progress  ChapterProgress[]
+  questions Question[]
+
+  @@unique([subjectId, number])
+}
+
+model ChapterProgress {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chapterId   String
+  chapter     Chapter  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  completedAt DateTime @default(now())
+
+  @@unique([userId, chapterId])
+}
+
+model StudyMaterial {
+  id          String       @id @default(uuid())
+  standardId  Int
+  standard    Standard     @relation(fields: [standardId], references: [id])
+  subjectId   String?
+  subject     Subject?     @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  title       String
+  type        MaterialType
+  url         String
+  sizeBytes   Int?
+  isPublished Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([standardId, type])
+}
+
+model Homework {
+  id          String   @id @default(uuid())
+  standardId  Int
+  standard    Standard @relation(fields: [standardId], references: [id])
+  subjectId   String
+  subject     Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  title       String
+  description String   @db.Text
+  dueDate     DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([standardId, dueDate])
+}
+
+// ---------------------------------------------------------------------------
+// Question bank & weekly tests
+// ---------------------------------------------------------------------------
+
+model Question {
+  id              String         @id @default(uuid())
+  standardId      Int
+  standard        Standard       @relation(fields: [standardId], references: [id])
+  subjectId       String
+  subject         Subject        @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  chapterId       String?
+  chapter         Chapter?       @relation(fields: [chapterId], references: [id], onDelete: SetNull)
+  text            String         @db.Text
+  // string[] - always 4 options
+  options         Json
+  correctOption   Int
+  explanation     String?        @db.Text
+  difficulty      Difficulty     @default(MEDIUM)
+  source          QuestionSource @default(MANUAL)
+  // AI questions start PENDING and are only usable after an admin approves them
+  status          QuestionStatus @default(PENDING)
+  rejectionReason String?
+  createdById     String?
+  createdBy       User?          @relation("QuestionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  reviewedById    String?
+  reviewedBy      User?          @relation("QuestionReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt      DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  testQuestions TestQuestion[]
+
+  @@index([standardId, subjectId, status])
+  @@index([chapterId])
+}
+
+model Test {
+  id               String     @id @default(uuid())
+  title            String
+  description      String?
+  standardId       Int
+  standard         Standard   @relation(fields: [standardId], references: [id])
+  subjectId        String
+  subject          Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  // Monday 00:00 IST of the week the test is live, and the following Monday
+  weekStart        DateTime
+  weekEnd          DateTime
+  durationMinutes  Int        @default(10)
+  marksPerQuestion Int        @default(1)
+  difficulty       Difficulty @default(MEDIUM)
+  isPaid           Boolean    @default(false)
+  status           TestStatus @default(DRAFT)
+  createdById      String?
+  createdBy        User?      @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  questions TestQuestion[]
+  attempts  TestAttempt[]
+
+  @@index([standardId, weekStart, status])
+  @@index([subjectId])
+}
+
+model TestQuestion {
+  testId     String
+  test       Test     @relation(fields: [testId], references: [id], onDelete: Cascade)
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Restrict)
+  order      Int
+
+  @@id([testId, questionId])
+}
+
+// One attempt per student per test. Created when the student starts the test so
+// the timer is enforced on the server; graded on submit.
+model TestAttempt {
+  id               String    @id @default(uuid())
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  testId           String
+  test             Test      @relation(fields: [testId], references: [id], onDelete: Cascade)
+  // { [questionId]: selectedOption | null }
+  answers          Json?
+  score            Int       @default(0)
+  totalMarks       Int       @default(0)
+  correctCount     Int       @default(0)
+  wrongCount       Int       @default(0)
+  skippedCount     Int       @default(0)
+  percentage       Float     @default(0)
+  startedAt        DateTime  @default(now())
+  submittedAt      DateTime?
+  timeTakenSeconds Int?
+
+  @@unique([userId, testId])
+  @@index([testId])
+}
+
+// ---------------------------------------------------------------------------
+// Ads (admin managed, child-safe house ads)
+// ---------------------------------------------------------------------------
+
+model Ad {
+  id        String    @id @default(uuid())
+  title     String
+  type      AdType
+  imageUrl  String
+  targetUrl String?
+  isActive  Boolean   @default(true)
+  priority  Int       @default(0)
+  startsAt  DateTime?
+  endsAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([type, isActive])
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  STUDENT
+  TEACHER
+  ADMIN
+}
+
+enum PaymentStatus {
+  CREATED
+  PAID
+  EXPIRED
+  CANCELLED
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
+enum MaterialType {
+  NOTE
+  PDF
+  VIDEO
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum QuestionSource {
+  MANUAL
+  AI
+}
+
+enum QuestionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum TestStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum AdType {
+  BANNER
+  INTERSTITIAL
+}
