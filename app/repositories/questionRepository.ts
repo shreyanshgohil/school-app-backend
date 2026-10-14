@@ -1,172 +1,167 @@
-import { prisma } from '../client/prisma';
-import { Prisma } from '../generated/prisma/client';
-import { Difficulty, QuestionStatus } from '../generated/prisma/enums';
+import { Difficulty, QuestionSource, QuestionStatus } from '../enum';
+import { compact, contains, found, normalize } from '../helpers/mongoHelper';
+import { Chapter, Question, QuestionModel, Subject, TestAttemptModel, TestModel, User } from '../models';
 
 export interface QuestionListFilters {
 	standardId?: number;
 	subjectId?: string;
 	chapterId?: string;
 	status?: QuestionStatus;
-	source?: Prisma.QuestionWhereInput['source'];
+	source?: QuestionSource;
 	difficulty?: Difficulty;
 	search?: string;
 }
 
-const buildWhere = (filters: QuestionListFilters): Prisma.QuestionWhereInput => ({
-	standardId: filters.standardId,
-	subjectId: filters.subjectId,
-	chapterId: filters.chapterId,
-	status: filters.status,
-	source: filters.source,
-	difficulty: filters.difficulty,
-	...(filters.search ? { text: { contains: filters.search, mode: 'insensitive' } } : {}),
-});
+export type QuestionWrite = Partial<Omit<Question, 'id' | 'createdAt' | 'updatedAt'>>;
+
+export type QuestionWithRelations = Question & {
+	subject: Pick<Subject, 'id' | 'name'> | null;
+	chapter: Pick<Chapter, 'id' | 'number' | 'title'> | null;
+	createdBy: Pick<User, 'id' | 'fullName'> | null;
+	reviewedBy: Pick<User, 'id' | 'fullName'> | null;
+};
+
+const RELATIONS = [
+	{ path: 'subject', select: 'name' },
+	{ path: 'chapter', select: 'number title' },
+	{ path: 'createdBy', select: 'fullName' },
+	{ path: 'reviewedBy', select: 'fullName' },
+];
+
+const buildFilter = (filters: QuestionListFilters) =>
+	compact({
+		standardId: filters.standardId,
+		subjectId: filters.subjectId,
+		chapterId: filters.chapterId,
+		status: filters.status,
+		source: filters.source,
+		difficulty: filters.difficulty,
+		text: filters.search ? contains(filters.search) : undefined,
+	});
 
 class QuestionRepository {
 	// Approved questions shown on the chapter "questions" tab
 	async getPracticeQuestions(chapterId: string, limit: number) {
-		return prisma.question.findMany({
-			where: { chapterId, status: QuestionStatus.APPROVED },
-			orderBy: { createdAt: 'asc' },
-			take: limit,
-			select: {
-				id: true,
-				text: true,
-				options: true,
-				correctOption: true,
-				explanation: true,
-				difficulty: true,
-			},
-		});
+		const questions = await QuestionModel.find({ chapterId, status: QuestionStatus.APPROVED })
+			.sort({ createdAt: 1 })
+			.limit(limit)
+			.select('text options correctOption explanation difficulty')
+			.lean();
+		return normalize<Pick<Question, 'id' | 'text' | 'options' | 'correctOption' | 'explanation' | 'difficulty'>[]>(
+			questions
+		);
 	}
 
 	async getAll(filters: QuestionListFilters, offset: number, limit: number) {
-		return prisma.question.findMany({
-			where: buildWhere(filters),
-			orderBy: { createdAt: 'desc' },
-			skip: offset,
-			take: limit,
-			include: {
-				subject: { select: { id: true, name: true } },
-				chapter: { select: { id: true, number: true, title: true } },
-				createdBy: { select: { id: true, fullName: true } },
-				reviewedBy: { select: { id: true, fullName: true } },
-			},
-		});
+		const questions = await QuestionModel.find(buildFilter(filters))
+			.sort({ createdAt: -1 })
+			.skip(offset)
+			.limit(limit)
+			.populate(RELATIONS)
+			.lean();
+		return normalize<QuestionWithRelations[]>(questions);
 	}
 
 	async count(filters: QuestionListFilters) {
-		return prisma.question.count({ where: buildWhere(filters) });
+		return QuestionModel.countDocuments(buildFilter(filters));
 	}
 
 	async countByStatus() {
-		return prisma.question.groupBy({ by: ['status'], _count: { _all: true } });
+		return QuestionModel.aggregate<{ _id: QuestionStatus; count: number }>([
+			{ $group: { _id: '$status', count: { $sum: 1 } } },
+		]);
 	}
 
 	async getById(id: string) {
-		return prisma.question.findUnique({ where: { id } });
+		return normalize<Question | null>(await QuestionModel.findById(id).lean());
 	}
 
 	async getDetails(id: string) {
-		return prisma.question.findUnique({
-			where: { id },
-			include: {
-				subject: { select: { id: true, name: true } },
-				chapter: { select: { id: true, number: true, title: true } },
-				createdBy: { select: { id: true, fullName: true } },
-				reviewedBy: { select: { id: true, fullName: true } },
-			},
-		});
+		return normalize<QuestionWithRelations | null>(await QuestionModel.findById(id).populate(RELATIONS).lean());
 	}
 
-	async create(data: Prisma.QuestionUncheckedCreateInput) {
-		return prisma.question.create({ data });
+	async create(data: QuestionWrite) {
+		const question = await QuestionModel.create(data);
+		return normalize<Question>(question.toObject());
 	}
 
-	async createMany(data: Prisma.QuestionUncheckedCreateInput[]) {
-		return prisma.question.createManyAndReturn({ data });
+	async createMany(data: QuestionWrite[]) {
+		const questions = await QuestionModel.insertMany(data);
+		return normalize<Question[]>(questions.map((question) => question.toObject()));
 	}
 
-	async update(id: string, data: Prisma.QuestionUncheckedUpdateInput) {
-		return prisma.question.update({ where: { id }, data });
+	async update(id: string, data: QuestionWrite) {
+		const question = await QuestionModel.findByIdAndUpdate(
+			id,
+			{ $set: compact(data) },
+			{ returnDocument: 'after', runValidators: true }
+		).lean();
+		return normalize<Question>(found(question));
 	}
 
 	async delete(id: string) {
-		return prisma.question.delete({ where: { id } });
+		return normalize<Question>(found(await QuestionModel.findByIdAndDelete(id).lean()));
 	}
 
-	async review(
-		ids: string[],
-		status: QuestionStatus,
-		reviewerId: string,
-		rejectionReason?: string
-	) {
-		return prisma.question.updateMany({
-			where: { id: { in: ids } },
-			data: {
-				status,
-				reviewedById: reviewerId,
-				reviewedAt: new Date(),
-				rejectionReason: status === QuestionStatus.REJECTED ? (rejectionReason ?? null) : null,
-			},
-		});
+	async review(ids: string[], status: QuestionStatus, reviewerId: string, rejectionReason?: string) {
+		const result = await QuestionModel.updateMany(
+			{ _id: { $in: ids } },
+			{
+				$set: {
+					status,
+					reviewedById: reviewerId,
+					reviewedAt: new Date(),
+					rejectionReason: status === QuestionStatus.REJECTED ? (rejectionReason ?? null) : null,
+				},
+			}
+		);
+		return { count: result.matchedCount };
 	}
 
 	async isUsedInTests(id: string) {
-		const count = await prisma.testQuestion.count({ where: { questionId: id } });
-		return count > 0;
+		return !!(await TestModel.exists({ 'questions.questionId': id }));
 	}
 
 	// True when a student has already been graded on this question
 	async isUsedInSubmittedTests(id: string) {
-		const count = await prisma.testQuestion.count({
-			where: {
-				questionId: id,
-				test: { attempts: { some: { submittedAt: { not: null } } } },
-			},
-		});
-		return count > 0;
+		const testIds = await TestModel.find({ 'questions.questionId': id }).distinct('_id');
+		if (!testIds.length) return false;
+		return !!(await TestAttemptModel.exists({ testId: { $in: testIds }, submittedAt: { $ne: null } }));
 	}
 
 	// Recent question texts, given to the AI so it does not repeat them
 	async getRecentTexts(subjectId: string, chapterId: string | undefined, limit: number) {
-		const rows = await prisma.question.findMany({
-			where: {
-				subjectId,
-				...(chapterId ? { chapterId } : {}),
-				status: { not: QuestionStatus.REJECTED },
-			},
-			orderBy: { createdAt: 'desc' },
-			take: limit,
-			select: { text: true },
-		});
+		const rows = await QuestionModel.find(
+			compact({ subjectId, chapterId, status: { $ne: QuestionStatus.REJECTED } })
+		)
+			.sort({ createdAt: -1 })
+			.limit(limit)
+			.select('text')
+			.lean();
 		return rows.map((row) => row.text);
 	}
 
 	// Approved question ids that match a test's standard / subject (and optionally difficulty)
-	async getApprovedIds(
-		standardId: number,
-		subjectId: string,
-		difficulty?: Difficulty,
-		chapterIds?: string[]
-	) {
-		const rows = await prisma.question.findMany({
-			where: {
+	async getApprovedIds(standardId: number, subjectId: string, difficulty?: Difficulty, chapterIds?: string[]) {
+		const ids = await QuestionModel.find(
+			compact({
 				standardId,
 				subjectId,
 				status: QuestionStatus.APPROVED,
-				...(difficulty ? { difficulty } : {}),
-				...(chapterIds?.length ? { chapterId: { in: chapterIds } } : {}),
-			},
-			select: { id: true },
-		});
-		return rows.map((row) => row.id);
+				difficulty,
+				chapterId: chapterIds?.length ? { $in: chapterIds } : undefined,
+			})
+		).distinct('_id');
+		return ids.map((id) => id.toString());
 	}
 
 	// Count of the given ids that are approved and belong to the standard / subject
 	async countValidForTest(ids: string[], standardId: number, subjectId: string) {
-		return prisma.question.count({
-			where: { id: { in: ids }, standardId, subjectId, status: QuestionStatus.APPROVED },
+		return QuestionModel.countDocuments({
+			_id: { $in: ids },
+			standardId,
+			subjectId,
+			status: QuestionStatus.APPROVED,
 		});
 	}
 }

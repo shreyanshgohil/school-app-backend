@@ -1,6 +1,6 @@
 import { NextFunction, Response } from 'express';
-import { Prisma } from '../../generated/prisma/client';
-import { MaterialType } from '../../generated/prisma/enums';
+import { ChapterInput, HomeworkInput, MaterialInput, SubjectInput } from '../../interfaces/contentInterface';
+import { MaterialType } from '../../enum';
 import { DefaultResponse } from '../../helpers/defaultResponseHelper';
 import { getBody, getQuery } from '../../helpers/requestHelper';
 import { checkValidation } from '../../helpers/validationHelper';
@@ -24,7 +24,7 @@ class ContentController {
 		try {
 			checkValidation(req);
 			const subject = await contentServices.createSubject(
-				getBody<Prisma.SubjectUncheckedCreateInput>(req)
+				getBody<SubjectInput>(req)
 			);
 			return DefaultResponse(res, 201, 'Subject created successfully', subject);
 		} catch (err) {
@@ -37,7 +37,7 @@ class ContentController {
 			checkValidation(req);
 			const subject = await contentServices.updateSubject(
 				req.params.id as string,
-				getBody<Prisma.SubjectUncheckedUpdateInput>(req)
+				getBody<Partial<SubjectInput>>(req)
 			);
 			return DefaultResponse(res, 200, 'Subject updated successfully', subject);
 		} catch (err) {
@@ -71,7 +71,7 @@ class ContentController {
 		try {
 			checkValidation(req);
 			const chapter = await contentServices.createChapter(
-				getBody<Prisma.ChapterUncheckedCreateInput>(req)
+				getBody<ChapterInput>(req)
 			);
 			return DefaultResponse(res, 201, 'Chapter created successfully', chapter);
 		} catch (err) {
@@ -84,7 +84,7 @@ class ContentController {
 			checkValidation(req);
 			const chapter = await contentServices.updateChapter(
 				req.params.id as string,
-				getBody<Prisma.ChapterUncheckedUpdateInput>(req)
+				getBody<Partial<ChapterInput>>(req)
 			);
 			return DefaultResponse(res, 200, 'Chapter updated successfully', chapter);
 		} catch (err) {
@@ -132,7 +132,7 @@ class ContentController {
 		try {
 			checkValidation(req);
 			const material = await contentServices.createMaterial(
-				getBody<Prisma.StudyMaterialUncheckedCreateInput>(req)
+				getBody<MaterialInput>(req)
 			);
 			return DefaultResponse(res, 201, 'Material created successfully', material);
 		} catch (err) {
@@ -145,7 +145,7 @@ class ContentController {
 			checkValidation(req);
 			const material = await contentServices.updateMaterial(
 				req.params.id as string,
-				getBody<Prisma.StudyMaterialUncheckedUpdateInput>(req)
+				getBody<Partial<MaterialInput>>(req)
 			);
 			return DefaultResponse(res, 200, 'Material updated successfully', material);
 		} catch (err) {
@@ -189,7 +189,7 @@ class ContentController {
 		try {
 			checkValidation(req);
 			const homework = await contentServices.createHomework(
-				getBody<Prisma.HomeworkUncheckedCreateInput>(req)
+				getBody<HomeworkInput>(req)
 			);
 			return DefaultResponse(res, 201, 'Homework created successfully', homework);
 		} catch (err) {
@@ -202,7 +202,7 @@ class ContentController {
 			checkValidation(req);
 			const homework = await contentServices.updateHomework(
 				req.params.id as string,
-				getBody<Prisma.HomeworkUncheckedUpdateInput>(req)
+				getBody<Partial<HomeworkInput>>(req)
 			);
 			return DefaultResponse(res, 200, 'Homework updated successfully', homework);
 		} catch (err) {

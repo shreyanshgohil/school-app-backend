@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { randomUUID } from 'node:crypto';
 import config from '../../config';
-import { UserRole } from '../generated/prisma/enums';
+import { UserRole } from '../enum';
 
 export interface AccessTokenPayload {
 	id: string;

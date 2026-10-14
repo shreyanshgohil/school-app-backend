@@ -1,5 +1,5 @@
 import { NextFunction, Response } from 'express';
-import { UserRole } from '../generated/prisma/enums';
+import { UserRole } from '../enum';
 import { RequestExtended } from '../interfaces/global';
 import { CustomError } from '../models/customError';
 

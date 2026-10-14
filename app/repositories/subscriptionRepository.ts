@@ -1,36 +1,47 @@
-import { prisma } from '../client/prisma';
-import { Prisma } from '../generated/prisma/client';
-import { SubscriptionStatus } from '../generated/prisma/enums';
+import { SubscriptionStatus } from '../enum';
+import { normalize } from '../helpers/mongoHelper';
+import { Subscription, SubscriptionModel } from '../models';
 
 class SubscriptionRepository {
 	async getActive(userId: string) {
 		const now = new Date();
-		return prisma.subscription.findFirst({
-			where: {
-				userId,
-				status: SubscriptionStatus.ACTIVE,
-				startsAt: { lte: now },
-				endsAt: { gt: now },
-			},
-			orderBy: { endsAt: 'desc' },
-		});
+		const subscription = await SubscriptionModel.findOne({
+			userId,
+			status: SubscriptionStatus.ACTIVE,
+			startsAt: { $lte: now },
+			endsAt: { $gt: now },
+		})
+			.sort({ endsAt: -1 })
+			.lean();
+		return normalize<Subscription | null>(subscription);
 	}
 
 	async getLatest(userId: string) {
-		return prisma.subscription.findFirst({
-			where: { userId, status: SubscriptionStatus.ACTIVE },
-			orderBy: { endsAt: 'desc' },
-		});
+		const subscription = await SubscriptionModel.findOne({ userId, status: SubscriptionStatus.ACTIVE })
+			.sort({ endsAt: -1 })
+			.lean();
+		return normalize<Subscription | null>(subscription);
 	}
 
-	async create(data: Prisma.SubscriptionUncheckedCreateInput) {
-		return prisma.subscription.create({ data });
+	async create(data: {
+		userId: string;
+		plan: string;
+		amountPaise: number;
+		startsAt: Date;
+		endsAt: Date;
+		provider?: string;
+		providerRef?: string;
+	}) {
+		const subscription = await SubscriptionModel.create(data);
+		return normalize<Subscription>(subscription.toObject());
 	}
 
 	async countActive() {
 		const now = new Date();
-		return prisma.subscription.count({
-			where: { status: SubscriptionStatus.ACTIVE, startsAt: { lte: now }, endsAt: { gt: now } },
+		return SubscriptionModel.countDocuments({
+			status: SubscriptionStatus.ACTIVE,
+			startsAt: { $lte: now },
+			endsAt: { $gt: now },
 		});
 	}
 }

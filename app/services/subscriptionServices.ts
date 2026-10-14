@@ -2,7 +2,7 @@ import config from '../../config';
 import { isRazorpayConfigured } from '../client/razorpay';
 import { PLAN_MONTHS } from '../constants/plans';
 import { addMonths } from '../helpers/dateHelper';
-import { UserRole } from '../generated/prisma/enums';
+import { UserRole } from '../enum';
 import { subscriptionRepository } from '../repositories';
 
 interface AccessUser {

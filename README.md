@@ -1,32 +1,31 @@
 # Shala Sangathi - Backend
 
 REST API for the Shala Sangathi app (GSEB, Gujarati medium, Std 1–10).
-Node + Express 5 + TypeScript + Prisma 7 (PostgreSQL). The layout follows the CostAllocationPro backend:
+Node + Express 5 + TypeScript + MongoDB (Mongoose 9). The layout follows the CostAllocationPro backend:
 
 ```
 index.ts            Express app: security headers, CORS, routes, startup
 config.ts           All environment variables in one object
-prisma/             schema.prisma, migrations, seed.ts
+scripts/seed.ts     Development seed data
 app/
   routes/           One router per feature; routes/index.ts mounts them, admin/ holds the admin panel API
   controllers/      Validate → call a service → DefaultResponse (admin/ for the admin panel)
   services/         Business rules (weekly test window, grading, paid access, AI generation...)
-  repositories/     Prisma queries only
+  repositories/     Mongoose queries only - return plain objects with `id` (never `_id`)
   middlewares/      isAuthenticated, isStaff / isAdmin
   helpers/          Responses, errors, validators, tokens, dates, grades
   interfaces/       Request / input types
-  models/           CustomError
-  client/           Prisma and Anthropic clients
-  generated/prisma  Generated Prisma client (git-ignored, `npm run prisma:generate`)
+  models/           Mongoose schemas (one file per collection) + CustomError
+  enum.ts           Shared enums (roles, statuses...)
+  client/           Anthropic and Razorpay clients
 ```
 
 ## Run locally
 
 ```bash
 cp .env.example .env          # then set real JWT secrets
-docker compose up -d          # PostgreSQL on localhost:5433
+# MongoDB: a local install on 27017 works as is; or `docker compose up -d` (port 27018) and change MONGODB_URI
 npm install
-npm run prisma:migrate        # create tables
 npm run db:seed               # standards, subjects, Std 5 sample content, demo users
 npm run dev                   # http://localhost:8080/api/v1
 ```
@@ -64,4 +63,6 @@ Demo logins created by the seed (passwords come from `SEED_*` in `.env`):
   A payment extends the plan exactly once. Without keys, online payment is switched off and admins can still grant plans
   from the student screen in the admin panel (e.g. after cash/UPI at school).
 - **Auth**: short-lived access token (1h) + rotating refresh token (30 days) stored per device in `Token`. Logout or password change revokes sessions immediately.
-- **Production**: `docker build -t shala-backend .` - the container runs `prisma migrate deploy` and starts the API.
+- **Database**: MongoDB, set `MONGODB_URI`. There are no migrations - indexes (unique username/email, one attempt per
+  student per test, session expiry TTL...) are created from the schemas when the API starts. Expired sessions are removed by MongoDB.
+- **Production**: `docker build -t shala-backend .` - the container starts the API (`npm start`).

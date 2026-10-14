@@ -4,9 +4,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import path from 'node:path';
 import config from './config';
-import { prisma } from './app/client/prisma';
-import { connectDatabase } from './app/config/db';
-import tokenRepository from './app/repositories/tokenRepository';
+import { connectDatabase, disconnectDatabase } from './app/config/db';
 import routes from './app/routes';
 
 const app = express();
@@ -38,18 +36,13 @@ app.use((req, res) => {
 const start = async () => {
 	await connectDatabase();
 
-	// Clear expired login sessions once a day
-	const cleanup = () => tokenRepository.deleteExpired().catch((err) => console.error(err));
-	cleanup();
-	setInterval(cleanup, 24 * 60 * 60 * 1000).unref();
-
 	const server = app.listen(config.port, () => {
 		console.log(`Server is listening on port ${config.port}`);
 	});
 
 	const shutdown = () => {
 		server.close(() => {
-			prisma.$disconnect().finally(() => process.exit(0));
+			disconnectDatabase().finally(() => process.exit(0));
 		});
 	};
 	process.on('SIGTERM', shutdown);

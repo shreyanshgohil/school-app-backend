@@ -1,16 +1,14 @@
-import { prisma } from '../client/prisma';
+import { normalize } from '../helpers/mongoHelper';
+import { Standard, StandardModel } from '../models';
 
 class StandardRepository {
 	async getAll() {
-		return prisma.standard.findMany({
-			orderBy: { order: 'asc' },
-			select: { id: true, name: true },
-		});
+		const standards = await StandardModel.find().sort({ order: 1 }).select('name').lean();
+		return normalize<Pick<Standard, 'id' | 'name'>[]>(standards);
 	}
 
 	async exists(id: number) {
-		const count = await prisma.standard.count({ where: { id } });
-		return count > 0;
+		return !!(await StandardModel.exists({ _id: id }));
 	}
 }
 

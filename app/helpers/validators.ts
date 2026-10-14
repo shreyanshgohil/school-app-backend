@@ -7,7 +7,7 @@ import {
 	QuestionStatus,
 	TestStatus,
 	UserRole,
-} from '../generated/prisma/enums';
+} from '../enum';
 
 // Same rules for create (required) and update (optional) - avoids two copies of every chain
 const field = (name: string, optional: boolean) => (optional ? body(name).optional() : body(name));
@@ -22,7 +22,7 @@ const URL_OPTIONS = { protocols: ['http', 'https'], require_protocol: true, requ
 // Common
 // ---------------------------------------------------------------------------
 
-export const idParamValidation = [param('id').isUUID().withMessage('અમાન્ય ID')];
+export const idParamValidation = [param('id').isMongoId().withMessage('અમાન્ય ID')];
 
 export const paginationValidation = [
 	query('page').optional().isInt({ min: 1 }).toInt(),
@@ -110,18 +110,18 @@ export const changePasswordValidationRules = [
 
 export const testListValidation = [
 	query('scope').optional().isIn(['live', 'past']),
-	query('subjectId').optional().isUUID(),
+	query('subjectId').optional().isMongoId(),
 ];
 
 export const submitTestValidation = [
 	body('answers').isArray({ max: 200 }).withMessage('જવાબો યાદી સ્વરૂપે હોવા જોઈએ'),
-	body('answers.*.questionId').isUUID(),
+	body('answers.*.questionId').isMongoId(),
 	body('answers.*.selectedOption').optional({ values: 'null' }).isInt({ min: 0, max: 9 }).toInt(),
 ];
 
 export const materialListValidation = [
 	query('type').optional().isIn(Object.values(MaterialType)),
-	query('subjectId').optional().isUUID(),
+	query('subjectId').optional().isMongoId(),
 ];
 
 export const checkoutValidation = [
@@ -201,8 +201,8 @@ export const updateStaffValidation = [
 
 const questionRules = (optional: boolean) => [
 	standardIdRule(optional),
-	field('subjectId', optional).isUUID().withMessage('વિષય પસંદ કરો'),
-	body('chapterId').optional({ values: 'null' }).isUUID().withMessage('અમાન્ય પાઠ'),
+	field('subjectId', optional).isMongoId().withMessage('વિષય પસંદ કરો'),
+	body('chapterId').optional({ values: 'null' }).isMongoId().withMessage('અમાન્ય પાઠ'),
 	field('text', optional).trim().notEmpty().withMessage('પ્રશ્ન લખો'),
 	field('options', optional)
 		.isArray({ min: 4, max: 4 })
@@ -222,8 +222,8 @@ export const updateQuestionValidation = questionRules(true);
 export const questionListValidation = [
 	...paginationValidation,
 	query('standardId').optional().isInt({ min: 1, max: 10 }).toInt(),
-	query('subjectId').optional().isUUID(),
-	query('chapterId').optional().isUUID(),
+	query('subjectId').optional().isMongoId(),
+	query('chapterId').optional().isMongoId(),
 	query('status').optional().isIn(Object.values(QuestionStatus)),
 	query('source').optional().isIn(['MANUAL', 'AI']),
 	query('difficulty').optional().isIn(Object.values(Difficulty)),
@@ -232,8 +232,8 @@ export const questionListValidation = [
 
 export const generateQuestionsValidation = [
 	standardIdRule(false),
-	body('subjectId').isUUID().withMessage('વિષય પસંદ કરો'),
-	body('chapterId').optional({ values: 'falsy' }).isUUID().withMessage('અમાન્ય પાઠ'),
+	body('subjectId').isMongoId().withMessage('વિષય પસંદ કરો'),
+	body('chapterId').optional({ values: 'falsy' }).isMongoId().withMessage('અમાન્ય પાઠ'),
 	body('topic').optional({ values: 'falsy' }).trim().isLength({ max: 200 }),
 	body('count').isInt({ min: 1, max: 20 }).withMessage('પ્રશ્નોની સંખ્યા 1 થી 20 રાખો').toInt(),
 	body('difficulty').isIn(Object.values(Difficulty)),
@@ -241,7 +241,7 @@ export const generateQuestionsValidation = [
 
 export const reviewQuestionsValidation = [
 	body('ids').isArray({ min: 1, max: 100 }).withMessage('ઓછામાં ઓછો એક પ્રશ્ન પસંદ કરો'),
-	body('ids.*').isUUID(),
+	body('ids.*').isMongoId(),
 	body('status').isIn([QuestionStatus.APPROVED, QuestionStatus.REJECTED]),
 	body('rejectionReason').optional().trim().isLength({ max: 300 }),
 ];
@@ -254,7 +254,7 @@ const testRules = (optional: boolean) => [
 	field('title', optional).trim().notEmpty().withMessage('શીર્ષક લખો').isLength({ max: 120 }),
 	body('description').optional().trim().isLength({ max: 500 }),
 	standardIdRule(optional),
-	field('subjectId', optional).isUUID().withMessage('વિષય પસંદ કરો'),
+	field('subjectId', optional).isMongoId().withMessage('વિષય પસંદ કરો'),
 	field('weekOf', optional).isISO8601().withMessage('અઠવાડિયાની તારીખ પસંદ કરો'),
 	body('durationMinutes').optional().isInt({ min: 1, max: 180 }).toInt(),
 	body('marksPerQuestion').optional().isInt({ min: 1, max: 10 }).toInt(),
@@ -262,10 +262,10 @@ const testRules = (optional: boolean) => [
 	body('isPaid').optional().isBoolean().toBoolean(),
 	body('status').optional().isIn(Object.values(TestStatus)),
 	body('questionIds').optional().isArray({ min: 1, max: 100 }),
-	body('questionIds.*').isUUID(),
+	body('questionIds.*').isMongoId(),
 	body('autoPickCount').optional().isInt({ min: 1, max: 100 }).toInt(),
 	body('chapterIds').optional().isArray({ max: 50 }),
-	body('chapterIds.*').isUUID(),
+	body('chapterIds.*').isMongoId(),
 ];
 
 export const createTestValidation = testRules(false);
@@ -276,7 +276,7 @@ export const testStatusValidation = [body('status').isIn(Object.values(TestStatu
 export const adminTestListValidation = [
 	...paginationValidation,
 	query('standardId').optional().isInt({ min: 1, max: 10 }).toInt(),
-	query('subjectId').optional().isUUID(),
+	query('subjectId').optional().isMongoId(),
 	query('status').optional().isIn(Object.values(TestStatus)),
 	query('weekOf').optional().isISO8601(),
 ];
@@ -284,9 +284,9 @@ export const adminTestListValidation = [
 export const resultListValidation = [
 	...paginationValidation,
 	query('standardId').optional().isInt({ min: 1, max: 10 }).toInt(),
-	query('subjectId').optional().isUUID(),
-	query('testId').optional().isUUID(),
-	query('userId').optional().isUUID(),
+	query('subjectId').optional().isMongoId(),
+	query('testId').optional().isMongoId(),
+	query('userId').optional().isMongoId(),
 	query('weekOf').optional().isISO8601(),
 ];
 
@@ -309,7 +309,7 @@ export const createSubjectValidation = subjectRules(false);
 export const updateSubjectValidation = subjectRules(true);
 
 const chapterRules = (optional: boolean) => [
-	field('subjectId', optional).isUUID(),
+	field('subjectId', optional).isMongoId(),
 	field('number', optional).isInt({ min: 1, max: 200 }).toInt(),
 	field('title', optional).trim().notEmpty().isLength({ max: 120 }),
 	body('summary').optional({ values: 'null' }).trim().isLength({ max: 300 }),
@@ -326,7 +326,7 @@ export const updateChapterValidation = chapterRules(true);
 
 const materialRules = (optional: boolean) => [
 	standardIdRule(optional),
-	body('subjectId').optional({ values: 'null' }).isUUID(),
+	body('subjectId').optional({ values: 'null' }).isMongoId(),
 	field('title', optional).trim().notEmpty().isLength({ max: 120 }),
 	field('type', optional).isIn(Object.values(MaterialType)),
 	field('url', optional).isURL(URL_OPTIONS).withMessage('માન્ય લિંક (URL) લખો'),
@@ -339,7 +339,7 @@ export const updateMaterialValidation = materialRules(true);
 
 const homeworkRules = (optional: boolean) => [
 	standardIdRule(optional),
-	field('subjectId', optional).isUUID(),
+	field('subjectId', optional).isMongoId(),
 	field('title', optional).trim().notEmpty().isLength({ max: 120 }),
 	field('description', optional).trim().notEmpty(),
 	field('dueDate', optional).isISO8601().toDate(),
@@ -367,5 +367,5 @@ export const standardQueryValidation: ValidationChain[] = [
 ];
 
 export const subjectQueryValidation: ValidationChain[] = [
-	query('subjectId').isUUID().withMessage('વિષય પસંદ કરો'),
+	query('subjectId').isMongoId().withMessage('વિષય પસંદ કરો'),
 ];

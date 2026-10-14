@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { NextFunction, Request, Response } from 'express';
-import { Prisma } from '../generated/prisma/client';
+import mongoose from 'mongoose';
 import { CustomError } from '../models/customError';
 
 const toCustomError = (err: unknown): CustomError => {
@@ -8,19 +8,13 @@ const toCustomError = (err: unknown): CustomError => {
 		return err;
 	}
 
-	if (err instanceof Prisma.PrismaClientKnownRequestError) {
-		// Unique constraint
-		if (err.code === 'P2002') {
-			return new CustomError(409, 'આ માહિતી પહેલેથી છે');
-		}
-		// Record not found
-		if (err.code === 'P2025') {
-			return new CustomError(404, 'માહિતી મળી નથી');
-		}
-		// Foreign key constraint
-		if (err.code === 'P2003') {
-			return new CustomError(400, 'સંબંધિત માહિતી વપરાશમાં છે અથવા મળી નથી');
-		}
+	// Unique index (username, email, one attempt per test...)
+	if (err instanceof mongoose.mongo.MongoServerError && err.code === 11000) {
+		return new CustomError(409, 'આ માહિતી પહેલેથી છે');
+	}
+	// Malformed id or value that does not fit the schema
+	if (err instanceof mongoose.Error.CastError || err instanceof mongoose.Error.ValidationError) {
+		return new CustomError(400, 'અમાન્ય માહિતી');
 	}
 
 	// Malformed JSON body

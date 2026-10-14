@@ -1,4 +1,4 @@
-import { TestStatus } from '../generated/prisma/enums';
+import { TestStatus } from '../enum';
 import { getWeekRange } from '../helpers/dateHelper';
 import { getGrade, toPercentage } from '../helpers/gradeHelper';
 import { PaginationQuery } from '../interfaces/global';

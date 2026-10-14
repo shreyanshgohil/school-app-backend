@@ -1,5 +1,5 @@
-import { Prisma } from '../generated/prisma/client';
-import { MaterialType } from '../generated/prisma/enums';
+import { ChapterInput, HomeworkInput, MaterialInput, SubjectInput } from '../interfaces/contentInterface';
+import { MaterialType } from '../enum';
 import { CustomError } from '../models/customError';
 import {
 	chapterRepository,
@@ -36,11 +36,11 @@ class ContentServices {
 		return subjectRepository.getByStandard(standardId, true);
 	}
 
-	async createSubject(data: Prisma.SubjectUncheckedCreateInput) {
+	async createSubject(data: SubjectInput) {
 		return subjectRepository.create(data);
 	}
 
-	async updateSubject(id: string, data: Prisma.SubjectUncheckedUpdateInput) {
+	async updateSubject(id: string, data: Partial<SubjectInput>) {
 		return subjectRepository.update(id, data);
 	}
 
@@ -65,7 +65,7 @@ class ContentServices {
 		return this.found(await homeworkRepository.getById(id), 'હોમવર્ક મળ્યું નથી');
 	}
 
-	async createChapter(data: Prisma.ChapterUncheckedCreateInput) {
+	async createChapter(data: ChapterInput) {
 		const subject = await subjectRepository.getById(data.subjectId);
 		if (!subject) {
 			throw new CustomError(400, 'વિષય મળ્યો નથી');
@@ -73,7 +73,7 @@ class ContentServices {
 		return chapterRepository.create(data);
 	}
 
-	async updateChapter(id: string, data: Prisma.ChapterUncheckedUpdateInput) {
+	async updateChapter(id: string, data: Partial<ChapterInput>) {
 		return chapterRepository.update(id, data);
 	}
 
@@ -85,14 +85,14 @@ class ContentServices {
 		return materialRepository.getForStandard(standardId, { ...filters, includeUnpublished: true });
 	}
 
-	async createMaterial(data: Prisma.StudyMaterialUncheckedCreateInput) {
+	async createMaterial(data: MaterialInput) {
 		if (data.subjectId) {
 			await this.assertSubjectInStandard(data.subjectId, data.standardId);
 		}
 		return materialRepository.create(data);
 	}
 
-	async updateMaterial(id: string, data: Prisma.StudyMaterialUncheckedUpdateInput) {
+	async updateMaterial(id: string, data: Partial<MaterialInput>) {
 		return materialRepository.update(id, data);
 	}
 
@@ -104,12 +104,12 @@ class ContentServices {
 		return homeworkRepository.getForStandard(standardId);
 	}
 
-	async createHomework(data: Prisma.HomeworkUncheckedCreateInput) {
+	async createHomework(data: HomeworkInput) {
 		await this.assertSubjectInStandard(data.subjectId, data.standardId);
 		return homeworkRepository.create(data);
 	}
 
-	async updateHomework(id: string, data: Prisma.HomeworkUncheckedUpdateInput) {
+	async updateHomework(id: string, data: Partial<HomeworkInput>) {
 		return homeworkRepository.update(id, data);
 	}
 

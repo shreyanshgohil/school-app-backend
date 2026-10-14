@@ -1,5 +1,5 @@
 import { NextFunction, Response } from 'express';
-import { MaterialType } from '../generated/prisma/enums';
+import { MaterialType } from '../enum';
 import { DefaultResponse } from '../helpers/defaultResponseHelper';
 import { getAuthUser, getQuery } from '../helpers/requestHelper';
 import { checkValidation } from '../helpers/validationHelper';

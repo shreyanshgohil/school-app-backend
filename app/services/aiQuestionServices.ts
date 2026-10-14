@@ -3,7 +3,7 @@ import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { z } from 'zod';
 import config from '../../config';
 import { getAnthropicClient } from '../client/anthropic';
-import { Difficulty } from '../generated/prisma/enums';
+import { Difficulty } from '../enum';
 import { GeneratedQuestion } from '../interfaces/questionInterface';
 import { CustomError } from '../models/customError';
 

@@ -1,43 +1,50 @@
-import { prisma } from '../client/prisma';
-import { Prisma } from '../generated/prisma/client';
-import { AdType } from '../generated/prisma/enums';
+import { AdType } from '../enum';
+import { compact, found, normalize } from '../helpers/mongoHelper';
+import { AdInput } from '../interfaces/contentInterface';
+import { Ad, AdModel } from '../models';
 
 class AdRepository {
 	// Active ads of a type that are inside their schedule window, highest priority first
 	async getActive(type: AdType) {
 		const now = new Date();
-		return prisma.ad.findMany({
-			where: {
-				type,
-				isActive: true,
-				AND: [
-					{ OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
-					{ OR: [{ endsAt: null }, { endsAt: { gt: now } }] },
-				],
-			},
-			orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
-			select: { id: true, title: true, type: true, imageUrl: true, targetUrl: true },
-		});
+		const ads = await AdModel.find({
+			type,
+			isActive: true,
+			$and: [
+				{ $or: [{ startsAt: null }, { startsAt: { $lte: now } }] },
+				{ $or: [{ endsAt: null }, { endsAt: { $gt: now } }] },
+			],
+		})
+			.sort({ priority: -1, createdAt: -1 })
+			.select('title type imageUrl targetUrl')
+			.lean();
+		return normalize<Pick<Ad, 'id' | 'title' | 'type' | 'imageUrl' | 'targetUrl'>[]>(ads);
 	}
 
 	async getAll() {
-		return prisma.ad.findMany({ orderBy: [{ type: 'asc' }, { priority: 'desc' }] });
+		return normalize<Ad[]>(await AdModel.find().sort({ type: 1, priority: -1 }).lean());
 	}
 
 	async getById(id: string) {
-		return prisma.ad.findUnique({ where: { id } });
+		return normalize<Ad | null>(await AdModel.findById(id).lean());
 	}
 
-	async create(data: Prisma.AdUncheckedCreateInput) {
-		return prisma.ad.create({ data });
+	async create(data: AdInput) {
+		const ad = await AdModel.create(data);
+		return normalize<Ad>(ad.toObject());
 	}
 
-	async update(id: string, data: Prisma.AdUncheckedUpdateInput) {
-		return prisma.ad.update({ where: { id }, data });
+	async update(id: string, data: Partial<AdInput>) {
+		const ad = await AdModel.findByIdAndUpdate(
+			id,
+			{ $set: compact(data) },
+			{ returnDocument: 'after', runValidators: true }
+		).lean();
+		return normalize<Ad>(found(ad));
 	}
 
 	async delete(id: string) {
-		return prisma.ad.delete({ where: { id } });
+		return normalize<Ad>(found(await AdModel.findByIdAndDelete(id).lean()));
 	}
 }
 

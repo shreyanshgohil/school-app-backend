@@ -1,7 +1,7 @@
 /* Development seed: standards 1-10 with subjects, plus sample Std 5 content,
  * weekly tests, past results, a demo admin and demo students.
  * Run with: npm run db:seed (safe to run more than once). */
-import { prisma } from '../app/client/prisma';
+import { connectDatabase, disconnectDatabase } from '../app/config/db';
 import {
 	AdType,
 	Difficulty,
@@ -10,10 +10,23 @@ import {
 	QuestionStatus,
 	TestStatus,
 	UserRole,
-} from '../app/generated/prisma/enums';
+} from '../app/enum';
 import { getWeekRange, getWeekStartWeeksAgo } from '../app/helpers/dateHelper';
 import { toPercentage } from '../app/helpers/gradeHelper';
 import { hashPassword } from '../app/helpers/passwordHelper';
+import {
+	AdModel,
+	ChapterModel,
+	ChapterProgressModel,
+	HomeworkModel,
+	QuestionModel,
+	StandardModel,
+	StudyMaterialModel,
+	SubjectModel,
+	TestAttemptModel,
+	TestModel,
+	UserModel,
+} from '../app/models';
 
 const requireEnv = (name: string) => {
 	const value = process.env[name];
@@ -337,24 +350,31 @@ const TEST_TITLE: Partial<Record<SubjectKey, string>> = {
 // Seed steps
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Seed steps
+// ---------------------------------------------------------------------------
+
+// Insert once, keep later edits from the admin panel
+const UPSERT = { upsert: true, returnDocument: 'after' } as const;
+
 async function seedCurriculum() {
 	const subjectIds = new Map<string, string>(); // `${standard}:${key}` -> id
 
 	for (let standard = 1; standard <= 10; standard++) {
-		await prisma.standard.upsert({
-			where: { id: standard },
-			create: { id: standard, name: `ધોરણ ${standard}`, order: standard },
-			update: { name: `ધોરણ ${standard}`, order: standard },
-		});
+		await StandardModel.updateOne(
+			{ _id: standard },
+			{ $set: { name: `ધોરણ ${standard}`, order: standard } },
+			{ upsert: true }
+		);
 
 		const keys = subjectsForStandard(standard);
 		for (const [order, key] of keys.entries()) {
-			const subject = await prisma.subject.upsert({
-				where: { standardId_nameEn: { standardId: standard, nameEn: SUBJECTS[key].nameEn } },
-				create: { ...SUBJECTS[key], standardId: standard, order },
-				update: {},
-			});
-			subjectIds.set(`${standard}:${key}`, subject.id);
+			const subject = await SubjectModel.findOneAndUpdate(
+				{ standardId: standard, nameEn: SUBJECTS[key].nameEn },
+				{ $setOnInsert: { ...SUBJECTS[key], order } },
+				UPSERT
+			).lean();
+			subjectIds.set(`${standard}:${key}`, subject!._id.toString());
 		}
 	}
 	console.log('✔ Standards 1-10 and subjects');
@@ -366,54 +386,56 @@ async function seedUsers() {
 	const adminUsername = (process.env.SEED_ADMIN_USERNAME ?? 'admin').toLowerCase();
 	const adminEmail = process.env.SEED_ADMIN_EMAIL?.trim().toLowerCase() || null;
 	const adminMobile = process.env.SEED_ADMIN_MOBILE?.trim() || null;
-	const admin = await prisma.user.upsert({
-		where: { username: adminUsername },
-		create: {
-			username: adminUsername,
-			email: adminEmail,
-			mobile: adminMobile,
-			password: await hashPassword(requireEnv('SEED_ADMIN_PASSWORD')),
-			fullName: 'શાળા સંચાલક',
-			role: UserRole.ADMIN,
+	const admin = await UserModel.findOneAndUpdate(
+		{ username: adminUsername },
+		{
+			$setOnInsert: {
+				password: await hashPassword(requireEnv('SEED_ADMIN_PASSWORD')),
+				fullName: 'શાળા સંચાલક',
+				role: UserRole.ADMIN,
+			},
+			$set: { email: adminEmail, mobile: adminMobile },
 		},
-		update: { email: adminEmail, mobile: adminMobile },
-	});
+		UPSERT
+	).lean();
 
 	const studentPassword = await hashPassword(requireEnv('SEED_STUDENT_PASSWORD'));
 	// Two siblings sharing one family mobile number
-	const abhishek = await prisma.user.upsert({
-		where: { username: 'abhishek' },
-		create: {
-			username: 'abhishek',
-			password: studentPassword,
-			fullName: 'અભિષેક પટેલ',
-			mobile: '9876543210',
-			standardId: 5,
-			avatar: 'boy',
-			schoolName: 'શ્રી વિદ્યા મંદિર',
+	const abhishek = await UserModel.findOneAndUpdate(
+		{ username: 'abhishek' },
+		{
+			$setOnInsert: {
+				password: studentPassword,
+				fullName: 'અભિષેક પટેલ',
+				mobile: '9876543210',
+				standardId: 5,
+				avatar: 'boy',
+				schoolName: 'શ્રી વિદ્યા મંદિર',
+			},
 		},
-		update: {},
-	});
-	await prisma.user.upsert({
-		where: { username: 'riya' },
-		create: {
-			username: 'riya',
-			password: studentPassword,
-			fullName: 'રિયા પટેલ',
-			mobile: '9876543210',
-			standardId: 3,
-			avatar: 'girl',
-			isSchoolStudent: true,
-			schoolName: process.env.SCHOOL_NAME ?? null,
+		UPSERT
+	).lean();
+	await UserModel.updateOne(
+		{ username: 'riya' },
+		{
+			$setOnInsert: {
+				password: studentPassword,
+				fullName: 'રિયા પટેલ',
+				mobile: '9876543210',
+				standardId: 3,
+				avatar: 'girl',
+				isSchoolStudent: true,
+				schoolName: process.env.SCHOOL_NAME ?? null,
+			},
 		},
-		update: {},
-	});
+		{ upsert: true }
+	);
 	console.log('✔ Demo admin and students');
-	return { admin, abhishek };
+	return { adminId: admin!._id.toString(), studentId: abhishek!._id.toString() };
 }
 
 async function seedStd5Content(subjectIds: Map<string, string>, adminId: string, studentId: string) {
-	if ((await prisma.question.count({ where: { standardId: 5 } })) > 0) {
+	if ((await QuestionModel.countDocuments({ standardId: 5 })) > 0) {
 		console.log('• Std 5 sample content already present - skipped');
 		return;
 	}
@@ -426,17 +448,17 @@ async function seedStd5Content(subjectIds: Map<string, string>, adminId: string,
 		// Chapters
 		const chapterIds = new Map<number, string>();
 		for (const [index, chapter] of data.chapters.entries()) {
-			const created = await prisma.chapter.upsert({
-				where: { subjectId_number: { subjectId, number: index + 1 } },
-				create: { ...chapter, subjectId, number: index + 1 },
-				update: {},
-			});
-			chapterIds.set(index + 1, created.id);
+			const created = await ChapterModel.findOneAndUpdate(
+				{ subjectId, number: index + 1 },
+				{ $setOnInsert: chapter },
+				UPSERT
+			).lean();
+			chapterIds.set(index + 1, created!._id.toString());
 		}
 
 		// Approved question bank
-		const questions = await prisma.question.createManyAndReturn({
-			data: data.questions.map(([text, options, correctOption, chapterNumber, explanation]) => ({
+		const questions = await QuestionModel.insertMany(
+			data.questions.map(([text, options, correctOption, chapterNumber, explanation]) => ({
 				standardId: 5,
 				subjectId,
 				chapterId: chapterNumber ? chapterIds.get(chapterNumber) : null,
@@ -450,27 +472,23 @@ async function seedStd5Content(subjectIds: Map<string, string>, adminId: string,
 				createdById: adminId,
 				reviewedById: adminId,
 				reviewedAt: new Date(),
-			})),
-		});
+			}))
+		);
 
 		const createTest = (weekStart: Date, weekEnd: Date, isPaid: boolean) =>
-			prisma.test.create({
-				data: {
-					title: TEST_TITLE[key]!,
-					description: 'આ અઠવાડિયાના અભ્યાસક્રમ પર આધારિત ટેસ્ટ',
-					standardId: 5,
-					subjectId,
-					weekStart,
-					weekEnd,
-					durationMinutes: 10,
-					difficulty: Difficulty.EASY,
-					isPaid,
-					status: TestStatus.PUBLISHED,
-					createdById: adminId,
-					questions: {
-						create: questions.map((question, index) => ({ questionId: question.id, order: index + 1 })),
-					},
-				},
+			TestModel.create({
+				title: TEST_TITLE[key]!,
+				description: 'આ અઠવાડિયાના અભ્યાસક્રમ પર આધારિત ટેસ્ટ',
+				standardId: 5,
+				subjectId,
+				weekStart,
+				weekEnd,
+				durationMinutes: 10,
+				difficulty: Difficulty.EASY,
+				isPaid,
+				status: TestStatus.PUBLISHED,
+				createdById: adminId,
+				questions: questions.map((question, index) => ({ questionId: question._id, order: index + 1 })),
 			});
 
 		// This week's live test
@@ -486,80 +504,73 @@ async function seedStd5Content(subjectIds: Map<string, string>, adminId: string,
 
 			const answers = Object.fromEntries(
 				questions.map((question, qIndex) => [
-					question.id,
+					question._id.toString(),
 					qIndex < correctCount ? question.correctOption : (question.correctOption + 1) % 4,
 				])
 			);
 			const startedAt = new Date(weekStart.getTime() + 2 * 24 * 60 * 60 * 1000);
-			await prisma.testAttempt.create({
-				data: {
-					userId: studentId,
-					testId: test.id,
-					answers,
-					score: correctCount,
-					totalMarks: questions.length,
-					correctCount,
-					wrongCount: questions.length - correctCount,
-					skippedCount: 0,
-					percentage: toPercentage(correctCount, questions.length),
-					startedAt,
-					submittedAt: new Date(startedAt.getTime() + 7 * 60 * 1000),
-					timeTakenSeconds: 7 * 60,
-				},
+			await TestAttemptModel.create({
+				userId: studentId,
+				testId: test._id,
+				answers,
+				score: correctCount,
+				totalMarks: questions.length,
+				correctCount,
+				wrongCount: questions.length - correctCount,
+				skippedCount: 0,
+				percentage: toPercentage(correctCount, questions.length),
+				startedAt,
+				submittedAt: new Date(startedAt.getTime() + 7 * 60 * 1000),
+				timeTakenSeconds: 7 * 60,
 			});
 		}
 
 		// Demo student finished the first chapter of every subject
-		await prisma.chapterProgress.create({ data: { userId: studentId, chapterId: chapterIds.get(1)! } });
+		await ChapterProgressModel.create({ userId: studentId, chapterId: chapterIds.get(1)! });
 	}
 
 	const subject = (key: SubjectKey) => subjectIds.get(`5:${key}`)!;
 	const MB = 1024 * 1024;
 
 	// Placeholder links - replace from the admin panel with real files
-	await prisma.studyMaterial.createMany({
-		data: [
-			{ standardId: 5, subjectId: subject('gujarati'), title: 'ગુજરાતી નોટ્સ (ધોરણ 5)', type: MaterialType.NOTE, url: 'https://example.com/shala-sangathi/std5/gujarati-notes.pdf', sizeBytes: Math.round(2.4 * MB) },
-			{ standardId: 5, subjectId: subject('maths'), title: 'ગણિત નોટ્સ (ધોરણ 5)', type: MaterialType.NOTE, url: 'https://example.com/shala-sangathi/std5/maths-notes.pdf', sizeBytes: Math.round(1.8 * MB) },
-			{ standardId: 5, subjectId: subject('science'), title: 'વિજ્ઞાન નોટ્સ (ધોરણ 5)', type: MaterialType.NOTE, url: 'https://example.com/shala-sangathi/std5/science-notes.pdf', sizeBytes: Math.round(3.1 * MB) },
-			{ standardId: 5, subjectId: subject('social'), title: 'સામાજિક વિજ્ઞાન નોટ્સ', type: MaterialType.NOTE, url: 'https://example.com/shala-sangathi/std5/social-notes.pdf', sizeBytes: Math.round(2.1 * MB) },
-			{ standardId: 5, subjectId: subject('english'), title: 'અંગ્રેજી નોટ્સ', type: MaterialType.NOTE, url: 'https://example.com/shala-sangathi/std5/english-notes.pdf', sizeBytes: Math.round(2.8 * MB) },
-			{ standardId: 5, subjectId: subject('gk'), title: 'સામાન્ય જ્ઞાન નોટ્સ', type: MaterialType.NOTE, url: 'https://example.com/shala-sangathi/std5/gk-notes.pdf', sizeBytes: Math.round(1.5 * MB) },
-			{ standardId: 5, subjectId: subject('maths'), title: 'ગણિત પાઠ્યપુસ્તક (PDF)', type: MaterialType.PDF, url: 'https://example.com/shala-sangathi/std5/maths-textbook.pdf', sizeBytes: Math.round(8.6 * MB) },
-			{ standardId: 5, subjectId: subject('gujarati'), title: 'ગુજરાતી પાઠ્યપુસ્તક (PDF)', type: MaterialType.PDF, url: 'https://example.com/shala-sangathi/std5/gujarati-textbook.pdf', sizeBytes: Math.round(7.2 * MB) },
-			{ standardId: 5, subjectId: subject('science'), title: 'પાણીનું ચક્ર - વિડિયો', type: MaterialType.VIDEO, url: 'https://example.com/shala-sangathi/std5/water-cycle' },
-			{ standardId: 5, subjectId: subject('maths'), title: 'અપૂર્ણાંક સમજીએ - વિડિયો', type: MaterialType.VIDEO, url: 'https://example.com/shala-sangathi/std5/fractions' },
-		],
-	});
+	await StudyMaterialModel.insertMany([
+		{ standardId: 5, subjectId: subject('gujarati'), title: 'ગુજરાતી નોટ્સ (ધોરણ 5)', type: MaterialType.NOTE, url: 'https://example.com/shala-sangathi/std5/gujarati-notes.pdf', sizeBytes: Math.round(2.4 * MB) },
+		{ standardId: 5, subjectId: subject('maths'), title: 'ગણિત નોટ્સ (ધોરણ 5)', type: MaterialType.NOTE, url: 'https://example.com/shala-sangathi/std5/maths-notes.pdf', sizeBytes: Math.round(1.8 * MB) },
+		{ standardId: 5, subjectId: subject('science'), title: 'વિજ્ઞાન નોટ્સ (ધોરણ 5)', type: MaterialType.NOTE, url: 'https://example.com/shala-sangathi/std5/science-notes.pdf', sizeBytes: Math.round(3.1 * MB) },
+		{ standardId: 5, subjectId: subject('social'), title: 'સામાજિક વિજ્ઞાન નોટ્સ', type: MaterialType.NOTE, url: 'https://example.com/shala-sangathi/std5/social-notes.pdf', sizeBytes: Math.round(2.1 * MB) },
+		{ standardId: 5, subjectId: subject('english'), title: 'અંગ્રેજી નોટ્સ', type: MaterialType.NOTE, url: 'https://example.com/shala-sangathi/std5/english-notes.pdf', sizeBytes: Math.round(2.8 * MB) },
+		{ standardId: 5, subjectId: subject('gk'), title: 'સામાન્ય જ્ઞાન નોટ્સ', type: MaterialType.NOTE, url: 'https://example.com/shala-sangathi/std5/gk-notes.pdf', sizeBytes: Math.round(1.5 * MB) },
+		{ standardId: 5, subjectId: subject('maths'), title: 'ગણિત પાઠ્યપુસ્તક (PDF)', type: MaterialType.PDF, url: 'https://example.com/shala-sangathi/std5/maths-textbook.pdf', sizeBytes: Math.round(8.6 * MB) },
+		{ standardId: 5, subjectId: subject('gujarati'), title: 'ગુજરાતી પાઠ્યપુસ્તક (PDF)', type: MaterialType.PDF, url: 'https://example.com/shala-sangathi/std5/gujarati-textbook.pdf', sizeBytes: Math.round(7.2 * MB) },
+		{ standardId: 5, subjectId: subject('science'), title: 'પાણીનું ચક્ર - વિડિયો', type: MaterialType.VIDEO, url: 'https://example.com/shala-sangathi/std5/water-cycle' },
+		{ standardId: 5, subjectId: subject('maths'), title: 'અપૂર્ણાંક સમજીએ - વિડિયો', type: MaterialType.VIDEO, url: 'https://example.com/shala-sangathi/std5/fractions' },
+	]);
 
 	const inDays = (days: number) => new Date(Date.now() + days * 24 * 60 * 60 * 1000);
-	await prisma.homework.createMany({
-		data: [
-			{ standardId: 5, subjectId: subject('gujarati'), title: 'પાઠ 2 ના શબ્દાર્થ લખો', description: '"વૃક્ષો આપણા મિત્ર" પાઠના બધા શબ્દાર્થ નોટબુકમાં બે વાર લખો.', dueDate: inDays(1) },
-			{ standardId: 5, subjectId: subject('maths'), title: 'અપૂર્ણાંકના 10 દાખલા', description: 'પાઠ્યપુસ્તકના સ્વાધ્યાય 2 ના 1 થી 10 દાખલા ગણો.', dueDate: inDays(2) },
-			{ standardId: 5, subjectId: subject('science'), title: 'સમતોલ આહારનો ચાર્ટ', description: 'તમારા એક દિવસના ખોરાકનો ચાર્ટ બનાવો અને તેમાં કયાં પોષક તત્ત્વો છે તે લખો.', dueDate: inDays(4) },
-		],
-	});
+	await HomeworkModel.insertMany([
+		{ standardId: 5, subjectId: subject('gujarati'), title: 'પાઠ 2 ના શબ્દાર્થ લખો', description: '"વૃક્ષો આપણા મિત્ર" પાઠના બધા શબ્દાર્થ નોટબુકમાં બે વાર લખો.', dueDate: inDays(1) },
+		{ standardId: 5, subjectId: subject('maths'), title: 'અપૂર્ણાંકના 10 દાખલા', description: 'પાઠ્યપુસ્તકના સ્વાધ્યાય 2 ના 1 થી 10 દાખલા ગણો.', dueDate: inDays(2) },
+		{ standardId: 5, subjectId: subject('science'), title: 'સમતોલ આહારનો ચાર્ટ', description: 'તમારા એક દિવસના ખોરાકનો ચાર્ટ બનાવો અને તેમાં કયાં પોષક તત્ત્વો છે તે લખો.', dueDate: inDays(4) },
+	]);
 
 	console.log('✔ Std 5 chapters, 60 questions, weekly tests, past results, materials and homework');
 }
 
 async function seedAds() {
-	if ((await prisma.ad.count()) > 0) return;
+	if ((await AdModel.countDocuments()) > 0) return;
 	const baseUrl = (process.env.PUBLIC_BASE_URL ?? 'http://localhost:8080').replace(/\/$/, '');
-	await prisma.ad.createMany({
-		data: [
-			{ title: 'શાળા સંગાથી - નવા સત્રના પ્રવેશ શરૂ', type: AdType.BANNER, imageUrl: `${baseUrl}/static/ads/banner.jpg`, priority: 1 },
-			{ title: 'શાળા સંગાથી - તમારી સફળતા, અમારો સંગાથ', type: AdType.INTERSTITIAL, imageUrl: `${baseUrl}/static/ads/interstitial.jpg`, priority: 1 },
-		],
-	});
+	await AdModel.insertMany([
+		{ title: 'શાળા સંગાથી - નવા સત્રના પ્રવેશ શરૂ', type: AdType.BANNER, imageUrl: `${baseUrl}/static/ads/banner.jpg`, priority: 1 },
+		{ title: 'શાળા સંગાથી - તમારી સફળતા, અમારો સંગાથ', type: AdType.INTERSTITIAL, imageUrl: `${baseUrl}/static/ads/interstitial.jpg`, priority: 1 },
+	]);
 	console.log('✔ Sample house ads');
 }
 
 async function main() {
+	await connectDatabase();
 	const subjectIds = await seedCurriculum();
-	const { admin, abhishek } = await seedUsers();
-	await seedStd5Content(subjectIds, admin.id, abhishek.id);
+	const { adminId, studentId } = await seedUsers();
+	await seedStd5Content(subjectIds, adminId, studentId);
 	await seedAds();
 }
 
@@ -568,4 +579,4 @@ main()
 		console.error(err);
 		process.exitCode = 1;
 	})
-	.finally(() => prisma.$disconnect());
+	.finally(() => disconnectDatabase());

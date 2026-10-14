@@ -1,4 +1,4 @@
-import { Difficulty, QuestionStatus } from '../generated/prisma/enums';
+import { Difficulty, QuestionStatus } from '../enum';
 
 export interface QuestionInput {
 	standardId: number;

@@ -1,4 +1,4 @@
-import { UserRole } from '../generated/prisma/enums';
+import { UserRole } from '../enum';
 import { getWeekRange } from '../helpers/dateHelper';
 import { PaginationQuery } from '../interfaces/global';
 import {
@@ -33,7 +33,7 @@ class DashboardServices {
 		]);
 
 		const questions = Object.fromEntries(
-			questionsByStatus.map((row) => [row.status, row._count._all])
+			questionsByStatus.map((row) => [row._id, row.count])
 		) as Record<string, number>;
 
 		return {

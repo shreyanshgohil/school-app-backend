@@ -1,7 +1,7 @@
-import { randomUUID } from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import config from '../../config';
-import { UserRole } from '../generated/prisma/enums';
+import { UserRole } from '../enum';
+import { newId } from '../helpers/mongoHelper';
 import { comparePassword, hashPassword } from '../helpers/passwordHelper';
 import {
 	generateAccessToken,
@@ -17,7 +17,7 @@ const normalizeUsername = (username: string) => username.trim().toLowerCase();
 
 class AuthServices {
 	private async issueTokens(user: { id: string; role: UserRole }, deviceId?: string) {
-		const tokenId = randomUUID();
+		const tokenId = newId();
 		const accessToken = generateAccessToken({ id: user.id, role: user.role, tokenId });
 		const refreshToken = generateRefreshToken({ id: user.id, tokenId });
 

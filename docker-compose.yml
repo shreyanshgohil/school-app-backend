@@ -1,16 +1,14 @@
-# Local PostgreSQL for development: docker compose up -d
+# Optional local MongoDB for development: docker compose up -d
+# Port 27018 so it does not clash with a MongoDB already installed on 27017.
+# Then set MONGODB_URI=mongodb://localhost:27018/shala_sangathi in .env
 services:
-  postgres:
-    image: postgres:17-alpine
+  mongo:
+    image: mongo:8
     restart: unless-stopped
-    environment:
-      POSTGRES_USER: shala
-      POSTGRES_PASSWORD: shala_dev_password
-      POSTGRES_DB: shala_sangathi
     ports:
-      - '5433:5432'
+      - '27018:27017'
     volumes:
-      - shala_pgdata:/var/lib/postgresql/data
+      - shala_mongodata:/data/db
 
 volumes:
-  shala_pgdata:
+  shala_mongodata:

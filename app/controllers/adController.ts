@@ -1,5 +1,5 @@
 import { NextFunction, Response } from 'express';
-import { Prisma } from '../generated/prisma/client';
+import { AdInput } from '../interfaces/contentInterface';
 import { DefaultResponse } from '../helpers/defaultResponseHelper';
 import { getBody } from '../helpers/requestHelper';
 import { checkValidation } from '../helpers/validationHelper';
@@ -42,7 +42,7 @@ class AdController {
 	async create(req: RequestExtended, res: Response, next: NextFunction) {
 		try {
 			checkValidation(req);
-			const ad = await adServices.create(getBody<Prisma.AdUncheckedCreateInput>(req));
+			const ad = await adServices.create(getBody<AdInput>(req));
 			return DefaultResponse(res, 201, 'Ad created successfully', ad);
 		} catch (err) {
 			next(err);
@@ -54,7 +54,7 @@ class AdController {
 			checkValidation(req);
 			const ad = await adServices.update(
 				req.params.id as string,
-				getBody<Prisma.AdUncheckedUpdateInput>(req)
+				getBody<Partial<AdInput>>(req)
 			);
 			return DefaultResponse(res, 200, 'Ad updated successfully', ad);
 		} catch (err) {

@@ -1,5 +1,5 @@
 import { NextFunction, Response } from 'express';
-import { UserRole } from '../../generated/prisma/enums';
+import { UserRole } from '../../enum';
 import { DefaultResponse } from '../../helpers/defaultResponseHelper';
 import { getPagination } from '../../helpers/paginationHelper';
 import { getAuthUser, getBody, getQuery } from '../../helpers/requestHelper';
@@ -90,7 +90,7 @@ class UserController {
 			const query = getQuery<{ page?: number; limit?: number; search?: string }>(req);
 			const pagination = getPagination(query);
 			const { users, total } = await userServices.getAll(
-				{ role: { in: [UserRole.ADMIN, UserRole.TEACHER] }, search: query.search },
+				{ role: [UserRole.ADMIN, UserRole.TEACHER], search: query.search },
 				pagination
 			);
 			return DefaultResponse(res, 200, 'Staff fetched successfully', users, total, pagination.page);

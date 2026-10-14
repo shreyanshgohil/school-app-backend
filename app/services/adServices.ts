@@ -1,5 +1,5 @@
-import { Prisma } from '../generated/prisma/client';
-import { AdType } from '../generated/prisma/enums';
+import { AdInput } from '../interfaces/contentInterface';
+import { AdType } from '../enum';
 import { CustomError } from '../models/customError';
 import { adRepository } from '../repositories';
 
@@ -31,11 +31,11 @@ class AdServices {
 		return adRepository.getAll();
 	}
 
-	async create(data: Prisma.AdUncheckedCreateInput) {
+	async create(data: AdInput) {
 		return adRepository.create(data);
 	}
 
-	async update(id: string, data: Prisma.AdUncheckedUpdateInput) {
+	async update(id: string, data: Partial<AdInput>) {
 		return adRepository.update(id, data);
 	}
 

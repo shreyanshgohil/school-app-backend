@@ -1,4 +1,4 @@
-import { UserRole } from '../generated/prisma/enums';
+import { UserRole } from '../enum';
 import { hashPassword } from '../helpers/passwordHelper';
 import { PaginationQuery } from '../interfaces/global';
 import { CustomError } from '../models/customError';

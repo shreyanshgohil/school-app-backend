@@ -1,5 +1,5 @@
 import { NextFunction, Response } from 'express';
-import { TestStatus } from '../../generated/prisma/enums';
+import { TestStatus } from '../../enum';
 import { getWeekRange } from '../../helpers/dateHelper';
 import { DefaultResponse } from '../../helpers/defaultResponseHelper';
 import { getPagination } from '../../helpers/paginationHelper';

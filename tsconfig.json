@@ -24,6 +24,6 @@
 		"skipLibCheck": true,
 		"types": ["node"]
 	},
-	"include": ["index.ts", "config.ts", "app/**/*.ts", "prisma/**/*.ts"],
+	"include": ["index.ts", "config.ts", "app/**/*.ts", "scripts/**/*.ts"],
 	"exclude": ["node_modules", "dist"]
 }

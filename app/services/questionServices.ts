@@ -1,4 +1,4 @@
-import { QuestionSource, QuestionStatus } from '../generated/prisma/enums';
+import { QuestionSource, QuestionStatus } from '../enum';
 import { PaginationQuery } from '../interfaces/global';
 import {
 	GenerateQuestionsInput,

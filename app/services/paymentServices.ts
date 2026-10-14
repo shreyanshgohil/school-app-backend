@@ -1,7 +1,8 @@
-import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import config from '../../config';
 import { createPaymentLink, fetchPaymentLink, isRazorpayConfigured, RazorpayPaymentLink } from '../client/razorpay';
-import { PaymentStatus, UserRole } from '../generated/prisma/enums';
+import { PaymentStatus, UserRole } from '../enum';
+import { newId } from '../helpers/mongoHelper';
 import { CustomError } from '../models/customError';
 import paymentRepository from '../repositories/paymentRepository';
 import subscriptionServices from './subscriptionServices';
@@ -23,12 +24,12 @@ class PaymentServices {
 			throw new CustomError(400, 'તમારા માટે બધી ટેસ્ટ પહેલેથી મફત છે');
 		}
 
-		const paymentId = randomUUID();
+		const paymentId = newId();
 		const amountPaise = config.subscriptionMonthlyPricePaise * months;
 		const link = await createPaymentLink({
 			amount: amountPaise,
 			// Max 40 chars and unique per link
-			reference_id: `ss_${paymentId.replace(/-/g, '')}`,
+			reference_id: `ss_${paymentId}`,
 			description: `શાળા સંગાથી - ${months} મહિનાનો પ્લાન`,
 			expire_by: Math.floor(Date.now() / 1000) + LINK_LIFETIME_SECONDS,
 			notes: { paymentId, userId: student.id, username: student.username, months: String(months) },

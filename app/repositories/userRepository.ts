@@ -1,120 +1,121 @@
-import { prisma } from '../client/prisma';
-import { Prisma } from '../generated/prisma/client';
-import { UserRole } from '../generated/prisma/enums';
+import { UserRole } from '../enum';
+import { compact, contains, found, isId, normalize } from '../helpers/mongoHelper';
+import { Standard, User, UserModel } from '../models';
 
-// Never select the password hash for API responses
-export const userPublicSelect = {
-	id: true,
-	username: true,
-	fullName: true,
-	email: true,
-	mobile: true,
-	role: true,
-	standardId: true,
-	standard: { select: { id: true, name: true } },
-	schoolName: true,
-	isSchoolStudent: true,
-	avatar: true,
-	isActive: true,
-	lastLoginAt: true,
-	createdAt: true,
-} satisfies Prisma.UserSelect;
+// Never return the password hash in API responses
+const PUBLIC_FIELDS =
+	'username fullName email mobile role standardId schoolName isSchoolStudent avatar isActive lastLoginAt createdAt';
+const WITH_STANDARD = { path: 'standard', select: 'name' };
+const STAFF_ROLES = [UserRole.ADMIN, UserRole.TEACHER];
+
+export type PublicUser = Omit<User, 'password' | 'updatedAt'> & {
+	standard: Pick<Standard, 'id' | 'name'> | null;
+};
+
+export type UserWrite = Partial<Omit<User, 'id' | 'createdAt' | 'updatedAt'>>;
 
 export interface UserListFilters {
 	search?: string;
 	standardId?: number;
 	isSchoolStudent?: boolean;
 	isActive?: boolean;
-	role?: Prisma.UserWhereInput['role'];
+	role?: UserRole | UserRole[];
 }
 
-const buildWhere = (filters: UserListFilters): Prisma.UserWhereInput => ({
-	role: filters.role,
-	standardId: filters.standardId,
-	isSchoolStudent: filters.isSchoolStudent,
-	isActive: filters.isActive,
-	...(filters.search
-		? {
-				OR: [
-					{ fullName: { contains: filters.search, mode: 'insensitive' } },
-					{ username: { contains: filters.search, mode: 'insensitive' } },
-					{ email: { contains: filters.search, mode: 'insensitive' } },
-					{ mobile: { contains: filters.search } },
-				],
-			}
-		: {}),
-});
+const buildFilter = (filters: UserListFilters) =>
+	compact({
+		role: Array.isArray(filters.role) ? { $in: filters.role } : filters.role,
+		standardId: filters.standardId,
+		isSchoolStudent: filters.isSchoolStudent,
+		isActive: filters.isActive,
+		$or: filters.search
+			? [
+					{ fullName: contains(filters.search) },
+					{ username: contains(filters.search) },
+					{ email: contains(filters.search) },
+					{ mobile: contains(filters.search) },
+				]
+			: undefined,
+	});
+
+const notSelf = (exceptId?: string) => (exceptId ? { _id: { $ne: exceptId } } : {});
 
 class UserRepository {
 	// Includes the password hash - only for login / password checks
 	async getByUsernameWithPassword(username: string) {
-		return prisma.user.findUnique({ where: { username } });
+		return normalize<User | null>(await UserModel.findOne({ username }).select('+password').lean());
 	}
 
 	async getByEmailWithPassword(email: string) {
-		return prisma.user.findUnique({ where: { email } });
+		return normalize<User | null>(await UserModel.findOne({ email }).select('+password').lean());
 	}
 
 	// Mobile is only a login id for staff - students may share a family number
 	async getStaffByMobileWithPassword(mobile: string) {
-		return prisma.user.findFirst({
-			where: { mobile, role: { in: [UserRole.ADMIN, UserRole.TEACHER] } },
-		});
+		const user = await UserModel.findOne({ mobile, role: { $in: STAFF_ROLES } })
+			.select('+password')
+			.lean();
+		return normalize<User | null>(user);
 	}
 
 	async isEmailTaken(email: string, exceptId?: string) {
-		const count = await prisma.user.count({ where: { email, ...(exceptId ? { NOT: { id: exceptId } } : {}) } });
-		return count > 0;
+		return !!(await UserModel.exists({ email, ...notSelf(exceptId) }));
 	}
 
 	async isStaffMobileTaken(mobile: string, exceptId?: string) {
-		const count = await prisma.user.count({
-			where: {
-				mobile,
-				role: { in: [UserRole.ADMIN, UserRole.TEACHER] },
-				...(exceptId ? { NOT: { id: exceptId } } : {}),
-			},
-		});
-		return count > 0;
+		return !!(await UserModel.exists({ mobile, role: { $in: STAFF_ROLES }, ...notSelf(exceptId) }));
 	}
 
 	async getByIdWithPassword(id: string) {
-		return prisma.user.findUnique({ where: { id } });
+		if (!isId(id)) return null;
+		return normalize<User | null>(await UserModel.findById(id).select('+password').lean());
 	}
 
 	async getById(id: string) {
-		return prisma.user.findUnique({ where: { id }, select: userPublicSelect });
+		// Ids from old sessions or bad input simply don't match
+		if (!isId(id)) return null;
+		const user = await UserModel.findById(id).select(PUBLIC_FIELDS).populate(WITH_STANDARD).lean();
+		return normalize<PublicUser | null>(user);
 	}
 
 	async isUsernameTaken(username: string) {
-		const count = await prisma.user.count({ where: { username } });
-		return count > 0;
+		return !!(await UserModel.exists({ username }));
 	}
 
-	async create(data: Prisma.UserUncheckedCreateInput) {
-		return prisma.user.create({ data, select: userPublicSelect });
+	async create(data: UserWrite) {
+		const user = await UserModel.create(data);
+		return found(await this.getById(user._id.toString()));
 	}
 
-	async update(id: string, data: Prisma.UserUncheckedUpdateInput) {
-		return prisma.user.update({ where: { id }, data, select: userPublicSelect });
+	async update(id: string, data: UserWrite) {
+		const user = await UserModel.findByIdAndUpdate(
+			id,
+			{ $set: compact(data) },
+			{ returnDocument: 'after', runValidators: true }
+		)
+			.select(PUBLIC_FIELDS)
+			.populate(WITH_STANDARD)
+			.lean();
+		return normalize<PublicUser>(found(user));
 	}
 
 	async updateLastLogin(id: string) {
-		return prisma.user.update({ where: { id }, data: { lastLoginAt: new Date() } });
+		await UserModel.updateOne({ _id: id }, { $set: { lastLoginAt: new Date() } });
 	}
 
 	async getAll(filters: UserListFilters, offset: number, limit: number) {
-		return prisma.user.findMany({
-			where: buildWhere(filters),
-			select: userPublicSelect,
-			orderBy: { createdAt: 'desc' },
-			skip: offset,
-			take: limit,
-		});
+		const users = await UserModel.find(buildFilter(filters))
+			.select(PUBLIC_FIELDS)
+			.populate(WITH_STANDARD)
+			.sort({ createdAt: -1 })
+			.skip(offset)
+			.limit(limit)
+			.lean();
+		return normalize<PublicUser[]>(users);
 	}
 
 	async count(filters: UserListFilters) {
-		return prisma.user.count({ where: buildWhere(filters) });
+		return UserModel.countDocuments(buildFilter(filters));
 	}
 }
 

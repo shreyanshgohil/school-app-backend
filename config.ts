@@ -16,7 +16,7 @@ function config(Env: NodeJS.ProcessEnv) {
 		port: Number(Env.PORT ?? 8080),
 		// Comma separated list; "*" allows any origin (mobile apps send no Origin header)
 		corsOrigins: (Env.CORS_ORIGINS ?? '*').split(',').map((origin) => origin.trim()),
-		databaseUrl: required('DATABASE_URL'),
+		mongodbUri: required('MONGODB_URI'),
 		accessTokenSecretKey: required('ACCESS_TOKEN_SECRET_KEY'),
 		refreshTokenSecretKey: required('REFRESH_TOKEN_SECRET_KEY'),
 		accessTokenExpireTime: 60 * 60, // in seconds - 1 hour
